@@ -1,0 +1,23 @@
+node_modules
+dist
+dist-ssr
+.pnpm-store
+*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Rust / Tauri
+src-tauri/target
+src-tauri/gen
+src-tauri/.cargo
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Test output
+coverage
+*.log

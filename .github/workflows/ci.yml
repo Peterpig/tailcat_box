@@ -1,0 +1,255 @@
+# Tailcat Box 持续集成
+#
+# 作用：在 push / pull_request 时检查前端（类型、单测、构建）与后端
+# （格式、lint、单测）。这里只做检查，不产出安装包，产物由 release.yml 负责。
+#
+# 注意：这套 workflow 目前还没有在真实 runner 上跑过（仓库此前没有 .git），
+# 首次运行请到 Actions 页面确认结果。
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+    # 发布 tag 由 release.yml 处理，这里不重复触发
+    tags-ignore:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支上的重复推送取消上一次未完成的检查，节省 runner 时间
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------- 前端：类型检查、单测、构建 ----------
+  frontend:
+    name: 前端检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 版本策略：package.json 里没有 packageManager 字段，所以显式指定
+      # pnpm 主版本 10（当前稳定大版本，支持 lockfileVersion 9.0 的锁文件）。
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm run typecheck
+
+      - name: 前端单测
+        run: pnpm test
+
+      - name: 前端构建
+        run: pnpm run build
+
+  # ---------- 后端：格式、lint、单测 ----------
+  backend:
+    name: 后端检查
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 下面几步在编译 Rust 之前先把前端产物生成出来：tauri 的 generate_context!
+      # 在生产构建（启用 custom-protocol，即 `tauri build`）时会读取
+      # build.frontendDist（../dist），目录不存在会直接 panic。本机实测：
+      #   cargo check --features tauri/custom-protocol
+      #   -> error: proc macro panicked
+      #      message: The `frontendDist` configuration is set to "../dist"
+      #               but this path doesn't exist
+      #
+      # 注意：本 job 只跑 fmt / clippy / test，这三步都是 dev 模式（不启用
+      # custom-protocol，见 tauri-macros 的 `dev: cfg!(not(feature = "custom-protocol"))`），
+      # 本机实测没有 dist/ 也能通过。保留构建步骤是为了让本 job 与发布链路保持一致，
+      # 同时避免以后给包加上 custom-protocol feature 时 CI 静默失效。
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: 缓存 Rust 编译产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      # Linux 上编译 Tauri 2 所需的系统依赖（与 release.yml 保持一致）
+      - name: 安装 Linux 系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建前端产物（供 Rust 编译期嵌入）
+        run: pnpm run build
+
+      # 格式检查是阻塞的：本机实测 `cargo fmt --all -- --check` 退出码为 0
+      # （已对全仓 Rust 代码跑过 `cargo fmt --all`）。
+      - name: 格式检查
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      # lint 同样是阻塞的：本机实测
+      # `cargo clippy --all-targets --all-features -- -D warnings` 为 0 error / 0 warning。
+      # 注意 clippy 在 src-tauri 下执行时，build.rs 会读取 tauri.conf.json，
+      # 因此需要上一步已经生成 dist/。
+      - name: Clippy 检查
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # 后端单测是阻塞的：本机实测 cargo test 全部通过（31 passed / 0 failed）
+      - name: 后端单测
+        working-directory: src-tauri
+        run: cargo test
+
+  # ---------- 后端：三平台原生编译检查（cargo check） ----------
+  #
+  # 目的：AGENT.md 验收条件第 1 条要求「macOS、Windows、Linux 均能构建」。
+  # 上面的 backend job 只在 ubuntu-22.04 上跑，Linux 之外的平台只有在打 tag
+  # 触发 Release 时才会暴露编译回归。本 job 把「三平台都能编译」前移到每次
+  # push / PR：矩阵里每个 runner 都是对应 target 的**原生宿主**
+  # （windows-latest 默认就是 x86_64-pc-windows-msvc，macos-latest 是 arm64
+  # 宿主，ubuntu-22.04 就是 x86_64-unknown-linux-gnu），所以这是原生编译而不是
+  # 交叉编译，不会遇到 sysroot / pkg-config 那类交叉编译环境问题。
+  #
+  # 重要限制：这里只做 `cargo check`——它**不做链接、不产出安装包**
+  # （没有 .dmg / .msi / .exe / .deb / .rpm / .AppImage），也不替代目标平台上的
+  # 打包与安装验证。真正的产物由 release.yml 在各平台原生构建。详见 docs/ci.md。
+  backend-platforms:
+    name: 后端编译检查（${{ matrix.name }}）
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+
+    strategy:
+      # 一个平台失败不中断其它平台，方便单独排查
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: Windows x86_64
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: macOS arm64
+            platform: macos-latest
+            target: aarch64-apple-darwin
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 矩阵里每个平台装的都是它自己的宿主 target，因此走原生编译路径
+          targets: ${{ matrix.target }}
+
+      - name: 缓存 Rust 编译产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      # Linux 上编译 Tauri 2 所需的系统依赖（与 backend job、release.yml 保持一致）。
+      # macOS 与 Windows 的 runner 自带所需 SDK，不需要额外安装系统依赖。
+      - name: 安装 Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      # 防御性探测：Windows 上 Tauri 的构建脚本（tauri-build → tauri-winres）
+      # 需要资源编译器来编译 .rc 资源与图标。
+      #   - GitHub 的 windows-latest 镜像自带 LLVM，llvm-rc 通常在 PATH 上；
+      #   - 原生 MSVC 构建也可以使用 Windows SDK 里的 rc.exe。
+      # 本机（macOS）无法确认 runner 镜像的 PATH 细节，所以这里只做探测：
+      # 打印实际找到的编译器路径，两个都找不到时才明确报错，避免出现
+      # 「已安装但不在 PATH」被误判为缺失，或最终以难懂的构建报错收场。
+      - name: 探测 Windows 资源编译器（llvm-rc / rc.exe）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $found = @()
+          foreach ($name in @('llvm-rc', 'rc')) {
+            $cmd = Get-Command $name -ErrorAction SilentlyContinue
+            if ($null -ne $cmd) {
+              Write-Host "$name -> $($cmd.Source)"
+              $found += $name
+            }
+          }
+          if ($found.Count -eq 0) {
+            Write-Host "::error::未找到 llvm-rc 或 rc.exe，tauri-winres 无法编译 .rc 资源与图标。"
+            exit 1
+          }
+          Write-Host "可用的 Windows 资源编译器：$($found -join ', ')"
+
+      # 原生编译检查。
+      # 关于「不需要先生成前端产物」：`src-tauri/Cargo.toml` 目前没有 [features]
+      # 段，因此 --all-features 只会打开本包的 feature（没有），**不会**打开
+      # tauri/custom-protocol；而 tauri-macros 的
+      # `dev: cfg!(not(feature = "custom-protocol"))` 决定了此时是 dev 模式，
+      # 编译期不会读取 build.frontendDist（../dist），所以没有 dist/ 也能通过。
+      # 这一点与本机脚本 scripts/cross-check.sh 跑的是同一条命令。
+      # 如果以后给 src-tauri 加上了 custom-protocol feature，请在这一步之前补上
+      # pnpm/Node + `pnpm install --frozen-lockfile && pnpm run build`
+      # （原因见上面 backend job 的注释）。
+      - name: 编译检查（cargo check --target）
+        working-directory: src-tauri
+        run: cargo check --target ${{ matrix.target }} --all-features

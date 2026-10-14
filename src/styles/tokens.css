@@ -1,0 +1,168 @@
+/*
+ * Tailcat Box - design tokens
+ * Source of truth: DESIGN.md (section "Design tokens").
+ *
+ * Rules:
+ *  - Components must consume the semantic variables below, never raw hex values.
+ *  - Every variable must be defined for both `[data-theme="light"]` and
+ *    `[data-theme="dark"]` so theme switching is total.
+ *  - Palette values are derived from the DESIGN.md baseline (near-black canvas,
+ *    hairline borders, a single high-contrast "pill" primary, and a small set of
+ *    saturated status accents reserved for state, never decoration).
+ */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* --- raw palette ------------------------------------------------------- */
+  --canvas: #f4f4f5;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-card: #fafafa;
+  --surface-inset: #efeff1;
+  --hairline: #e4e4e7;
+  --hairline-strong: #d3d3d8;
+  --ink: #131417;
+  --body: #3d3f45;
+  --mute: #71737a;
+  --ash: #9b9da4;
+
+  --primary: #131417;
+  --primary-pressed: #2a2c31;
+  --on-primary: #ffffff;
+
+  --accent-blue: #0b6fd4;
+  --accent-blue-soft: rgba(11, 111, 212, 0.1);
+  --accent-green: #10794f;
+  --accent-green-soft: rgba(16, 121, 79, 0.1);
+  --accent-yellow: #9a6400;
+  --accent-yellow-soft: rgba(154, 100, 0, 0.12);
+  --accent-red: #c62b2b;
+  --accent-red-soft: rgba(198, 43, 43, 0.1);
+  --on-danger: #ffffff;
+  --switch-thumb: #ffffff;
+
+  --overlay: rgba(19, 20, 23, 0.36);
+  --focus-ring: rgba(11, 111, 212, 0.55);
+  --shadow-color: 220 20% 20%;
+  --shadow-strength: 0.08;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* --- raw palette ------------------------------------------------------- */
+  --canvas: #07080a;
+  --surface: #0d0d0d;
+  --surface-elevated: #101111;
+  --surface-card: #121212;
+  --surface-inset: #0a0a0b;
+  --hairline: #242728;
+  --hairline-strong: #333739;
+  --ink: #f4f4f6;
+  --body: #cdcdcd;
+  --mute: #9c9c9d;
+  --ash: #6a6b6c;
+
+  --primary: #ffffff;
+  --primary-pressed: #e8e8e8;
+  --on-primary: #000000;
+
+  --accent-blue: #57c1ff;
+  --accent-blue-soft: rgba(87, 193, 255, 0.15);
+  --accent-green: #59d499;
+  --accent-green-soft: rgba(89, 212, 153, 0.15);
+  --accent-yellow: #ffc533;
+  --accent-yellow-soft: rgba(255, 197, 51, 0.15);
+  --accent-red: #ff6161;
+  --accent-red-soft: rgba(255, 97, 97, 0.15);
+  --on-danger: #1b0d0d;
+  --switch-thumb: #f4f4f6;
+
+  --overlay: rgba(0, 0, 0, 0.6);
+  --focus-ring: rgba(87, 193, 255, 0.6);
+  --shadow-color: 0 0% 0%;
+  --shadow-strength: 0.5;
+}
+
+/* --- semantic aliases (the only names components should use) ------------- */
+:root {
+  --background: var(--canvas);
+  --foreground: var(--ink);
+
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-elevated);
+  --popover-foreground: var(--ink);
+
+  --primary-bg: var(--primary);
+  --primary-foreground: var(--on-primary);
+
+  --secondary: var(--surface-card);
+  --secondary-foreground: var(--ink);
+
+  --muted: var(--surface-card);
+  --muted-foreground: var(--mute);
+
+  --accent: var(--surface-card);
+  --accent-foreground: var(--ink);
+
+  --border: var(--hairline);
+  --border-strong: var(--hairline-strong);
+  --input: var(--hairline-strong);
+  --ring: var(--focus-ring);
+
+  --success: var(--accent-green);
+  --success-soft: var(--accent-green-soft);
+  --warning: var(--accent-yellow);
+  --warning-soft: var(--accent-yellow-soft);
+  --danger: var(--accent-red);
+  --danger-soft: var(--accent-red-soft);
+  --danger-foreground: var(--on-danger);
+  --info: var(--accent-blue);
+  --info-soft: var(--accent-blue-soft);
+
+  --sidebar: var(--surface-inset);
+  --sidebar-foreground: var(--body);
+  --sidebar-accent: var(--surface-card);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline);
+
+  /* --- radii (DESIGN.md `rounded`) -------------------------------------- */
+  --radius-none: 0px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --radius: var(--radius-md);
+
+  /* --- type ------------------------------------------------------------- */
+  --font-sans: "Inter Variable", "Inter", system-ui, "Segoe UI", "Noto Sans SC",
+    sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace,
+    SFMono-Regular, Menlo, Consolas, monospace;
+  --font-feature-sans: "calt", "kern", "liga", "ss03";
+  --font-feature-mono: "calt", "kern", "liga";
+
+  /* --- density ---------------------------------------------------------- */
+  --control-height-sm: 28px;
+  --control-height: 32px;
+  --control-height-lg: 36px;
+  --control-height-xl: 44px;
+  --sidebar-width: 232px;
+  --titlebar-height: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration: 0ms;
+  }
+}
+
+:root {
+  --motion-duration: 140ms;
+  --motion-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}

@@ -1,0 +1,204 @@
+# Tailcat Box 发布流水线
+#
+# 作用：在 macOS / Linux / Windows 三个平台构建安装包，并创建 GitHub Release。
+# 说明：
+#   - Release 默认是 draft（草稿），需要人工在 GitHub 上确认后再点击 Publish。
+#   - 所有产物均为「未签名 / 未公证」构建，详见 docs/ci.md。
+#   - 本仓库尚未在真实 runner 上跑过这套流水线，Windows / Linux 产物也无法在
+#     macOS 开发机上交叉验证，因此第一次使用请在 Actions 页面观察日志。
+name: Release
+
+on:
+  push:
+    tags:
+      # 只接受语义化版本 tag（如 v0.1.0），避免 v2 之类的 tag 误触发发布
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      # 预发布版本（如 v0.2.0-rc.1）也允许触发，发布时仍然是 draft
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（形如 v0.1.0）。留空则用 tauri.conf.json 的版本生成 v__VERSION__"
+        required: false
+        default: ""
+      draft:
+        description: "创建草稿 Release（取消勾选会直接发布，谨慎使用）"
+        type: boolean
+        default: true
+
+# 发布 Release 需要写权限（上传 release assets、创建 tag）
+permissions:
+  contents: write
+
+# 同一个 tag 只允许一条流水线在跑，避免重复上传产物；不取消已在进行的构建
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.name }}
+    runs-on: ${{ matrix.platform }}
+    # 一个平台失败不影响其它平台，方便单独排查
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ---- macOS：Apple Silicon 与 Intel 分别构建 ----
+          - name: macOS (Apple Silicon)
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          - name: macOS (Intel)
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          # ---- Linux：x86_64 ----
+          - name: Linux (x86_64)
+            platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,rpm,appimage
+          # ---- Windows：x86_64 ----
+          - name: Windows (x86_64)
+            platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+
+    timeout-minutes: 90
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 版本策略：package.json 里没有 packageManager 字段，所以这里显式指定
+      # pnpm 主版本 10（当前稳定大版本，支持仓库里 lockfileVersion 9.0 的锁文件）。
+      # 如果以后在 package.json 里加了 packageManager 字段，可以把 version 去掉。
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 矩阵里每个平台只装自己需要的 target
+          targets: ${{ matrix.target }}
+
+      - name: 缓存 Rust 编译产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      # Linux 专用：Tauri 2 在 Ubuntu 22.04 上构建所需的系统依赖。
+      # rpm 用于打包 .rpm（需要 rpmbuild），其余为 webkit2gtk / GTK / AppIndicator 等。
+      - name: 安装 Linux 系统依赖
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            rpm
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      # 解析发布参数：push tag 触发时以实际触发的 tag（github.ref_name）为准，
+      # 避免 workflow_dispatch 专属的 inputs.tag 在 push 场景下为空而退化成
+      # v__VERSION__；workflow_dispatch 仍用 inputs.tag，留空时回退到
+      # tauri.conf.json 的版本（tauri-action 会把 __VERSION__ 替换成真实版本号），
+      # draft 默认 true。
+      # 通过环境变量传值，避免把用户输入直接拼进 shell 脚本。
+      - name: 解析发布参数
+        id: meta
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRAFT: ${{ inputs.draft }}
+        run: |
+          # push tag 触发时优先使用触发流水线的真实 tag
+          if [ "$EVENT_NAME" = "push" ] && [ -n "$REF_NAME" ]; then
+            tag="$REF_NAME"
+          else
+            tag="$INPUT_TAG"
+          fi
+          if [ -z "$tag" ]; then
+            tag="v__VERSION__"
+          fi
+          draft="$INPUT_DRAFT"
+          if [ -z "$draft" ]; then
+            draft="true"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "本次发布 tag=$tag draft=$draft target=${{ matrix.target }} bundles=${{ matrix.bundles }}"
+
+      # tauri-action 会调用 `pnpm tauri build`，并自动创建/更新 Release。
+      # bundle.targets 在 tauri.conf.json 里是 "all"，这里用 --bundles 显式限定
+      # 每个平台的产物类型，避免在不支持的平台上因为 all 中的某一项而失败。
+      - name: 构建并上传 Release 产物
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: "Tailcat Box v__VERSION__"
+          releaseBody: |
+            ## Tailcat Box __VERSION__
+
+            Tailcat Box 是官方 `tailcat` CLI 的跨平台图形客户端：监听服务、端口转发、
+            文件传输与目录共享，全部基于官方 CLI，不修改系统路由，不需要账号登录。
+
+            ### 本次构建产物
+
+            | 平台 | 架构 | 安装包类型 |
+            | --- | --- | --- |
+            | macOS | Apple Silicon (aarch64) | `.dmg`、`.app` |
+            | macOS | Intel (x86_64) | `.dmg`、`.app` |
+            | Linux | x86_64 | `.deb`、`.rpm`、`.AppImage` |
+            | Windows | x86_64 | `.msi`、NSIS `.exe` |
+
+            ### 安装前请阅读
+
+            - **本版本是未签名、未公证的构建**。macOS 首次打开需要「右键 → 打开」，
+              或执行 `xattr -dr com.apple.quarantine "/Applications/Tailcat Box.app"`。
+            - Windows 未做代码签名，SmartScreen 会提示，需要点击「更多信息 → 仍要运行」。
+            - Linux 的 AppImage 需要 FUSE（Ubuntu 22.04 可安装 `libfuse2`），
+              也可以 `chmod +x` 之后直接运行；`.deb` / `.rpm` 需要对应的包管理器安装。
+            - 完整的构建与验证说明见仓库内的 `docs/ci.md`。
+          releaseDraft: ${{ steps.meta.outputs.draft }}
+          prerelease: false
+          # 项目没有接入 tauri-plugin-updater，关掉自动生成的 updater JSON，避免多余告警
+          includeUpdaterJson: false
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # 额外上传一份 workflow artifact，保留 7 天：
+      # 这样即使是不带 tag 的手动运行，也能直接从 Actions 页面下载安装包。
+      # 路径同时兼容带 --target（target/<triple>/release/bundle）与不带 target 的情况。
+      - name: 上传构建产物（保留 7 天）
+        uses: actions/upload-artifact@v4
+        with:
+          name: tailcat-box-${{ matrix.target }}
+          path: |
+            src-tauri/target/**/release/bundle/**
+          if-no-files-found: warn
+          retention-days: 7

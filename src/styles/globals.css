@@ -1,0 +1,303 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Theme is driven by the `data-theme` attribute on <html>, not by the OS media
+ * query alone: the app resolves "follow system" in TypeScript and always writes
+ * a concrete theme, so every page flips together. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary-bg);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-surface-inset: var(--surface-inset);
+  --color-switch-thumb: var(--switch-thumb);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-panel: 0 1px 2px hsl(var(--shadow-color) / calc(var(--shadow-strength) * 0.6)),
+    0 8px 24px hsl(var(--shadow-color) / var(--shadow-strength));
+  --shadow-popover: 0 2px 6px hsl(var(--shadow-color) / calc(var(--shadow-strength) * 0.7)),
+    0 16px 40px hsl(var(--shadow-color) / calc(var(--shadow-strength) * 1.2));
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: var(--font-feature-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp,
+  .font-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: var(--font-feature-mono);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--accent-blue-soft);
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  ::placeholder {
+    color: var(--ash);
+  }
+
+  /* Thin, theme-aware scrollbars (no platform-specific chrome assumptions). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: var(--radius-full);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ash);
+  }
+}
+
+@layer components {
+  /* --- type roles (density-adapted from DESIGN.md typography) ------------ */
+  .t-display {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  .t-title-lg {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: -0.005em;
+  }
+
+  .t-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .t-subtitle {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+  }
+
+  .t-body {
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 1.55;
+  }
+
+  .t-caption {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+  }
+
+  .t-overline {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .t-mono {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    font-variant-ligatures: none;
+  }
+
+  /* --- surfaces --------------------------------------------------------- */
+  .panel {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+  }
+
+  .hairline-divider {
+    height: 1px;
+    background-color: var(--border);
+  }
+
+  .field-hint {
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+@keyframes tc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tc-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tc-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--success-soft);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes tc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-fade-in {
+  animation: tc-fade-in var(--motion-duration) var(--motion-ease) both;
+}
+
+.animate-rise-in {
+  animation: tc-rise-in var(--motion-duration) var(--motion-ease) both;
+}
+
+.animate-pulse-ring {
+  animation: tc-pulse-ring 2s var(--motion-ease) infinite;
+}
+
+.animate-spin-slow {
+  animation: tc-spin 900ms linear infinite;
+}
+
+/* Staggered page-load reveal: children opt in with `data-stagger`. */
+[data-stagger] > * {
+  animation: tc-rise-in var(--motion-duration) var(--motion-ease) both;
+}
+[data-stagger] > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+[data-stagger] > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+[data-stagger] > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+[data-stagger] > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+[data-stagger] > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+[data-stagger] > *:nth-child(6) {
+  animation-delay: 200ms;
+}
+[data-stagger] > *:nth-child(n + 7) {
+  animation-delay: 240ms;
+}

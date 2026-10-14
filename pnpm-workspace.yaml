@@ -1,0 +1,9 @@
+allowBuilds:
+  esbuild: true
+
+# 上游标准 pnpm（10/11）使用 onlyBuiltDependencies 来放行依赖的安装期构建脚本，
+# 且 pnpm 10+ 默认禁止依赖执行 postinstall。CI 上跑的是上游 pnpm，
+# 若没有这一项，esbuild 的二进制不会被安装，vite build 会失败。
+# 本机的 codex runtime 包装器读取的是上面的 allowBuilds，两处保留以同时兼容两边。
+onlyBuiltDependencies:
+  - esbuild
